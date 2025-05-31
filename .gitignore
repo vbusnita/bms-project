@@ -1,0 +1,13 @@
+# Python virtual environments
+bms-ml-pipeline/
+venv/
+
+# Node.js dependencies
+node_modules/
+
+# macOS files
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
