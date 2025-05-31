@@ -1,0 +1,50 @@
+name: Deploy to Containers
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-bms-container:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.BMS_CONTAINER_SSH_KEY }}
+
+      - name: Add remote server to known_hosts
+        run: |
+          ssh-keyscan -H 10.0.1.5 >> ~/.ssh/known_hosts
+
+      - name: Deploy to bms-container
+        run: |
+          ssh root@10.0.1.5 << 'EOF'
+            cd /root/bms-project/bms-container
+            git pull origin main
+            pkill -f "node server.js"
+            nohup node server.js &
+          EOF
+
+  deploy-bms-ml-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.BMS_ML_PIPELINE_SSH_KEY }}
+
+      - name: Add remote server to known_hosts
+        run: |
+          ssh-keyscan -H 10.0.1.7 >> ~/.ssh/known_hosts
+
+      - name: Deploy to bms-ml-pipeline
+        run: |
+          ssh root@10.0.1.7 << 'EOF'
+            cd /root/bms-project/bms-ml-pipeline
+            git pull origin main
+            pkill -f "python3 battery_ml_pipeline.py"
+            source /root/bms-ml-pipeline/bin/activate
+            nohup python3 battery_ml_pipeline.py &
+          EOF
