@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battery Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    body {
+      background-color: #121212;
+      color: #E0E0E0;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 28px;
+      color: #E0E0E0;
+      margin-bottom: 20px;
+    }
+    .container {
+      display: flex;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .data-panel {
+      flex: 1;
+      padding: 20px;
+      background-color: #1E1E1E;
+      border-radius: 8px;
+      margin-right: 20px;
+    }
+    .data-panel h2 {
+      font-size: 20px;
+      color: #b0b0b0;
+      margin-bottom: 15px;
+    }
+    .data-panel p {
+      font-size: 18px;
+      margin: 10px 0;
+    }
+    .data-panel span {
+      font-weight: bold;
+    }
+    .battery-container {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .battery-svg {
+      width: 60px;
+      height: 30px;
+      margin-right: 10px;
+    }
+    .battery-fill {
+      transition: fill 0.5s ease;
+    }
+    .indicator {
+      width: 24px;
+      height: 24px;
+      margin-left: 10px;
+    }
+    .indicator.charging {
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .charts-panel {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .chart-container {
+      background-color: #1E1E1E;
+      border-radius: 8px;
+      padding: 15px;
+      border: 1px solid #444;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+    }
+    .chart-container canvas {
+      width: 100% !important;
+      height: 300px !important;
+    }
+  </style>
+</head>
+<body>
+  <h1>Battery Monitoring Dashboard</h1>
+  <div class="container">
+    <div class="data-panel">
+      <h2>Latest Data</h2>
+      <div class="battery-container">
+        <svg class="battery-svg" viewBox="0 0 60 30">
+          <rect x="0" y="5" width="50" height="20" rx="5" ry="5" fill="#333" stroke="#b0b0b0" stroke-width="2"/>
+          <rect x="50" y="12" width="5" height="6" fill="#b0b0b0"/>
+          <rect class="battery-fill" x="2" y="7" width="46" height="16" rx="3" ry="3" fill="#00ff88"/>
+        </svg>
+        <svg class="indicator" viewBox="0 0 24 24" fill="#888">
+          <path d="M13.5 1.5L4 14h10l-1.5 8.5L22 10h-10l1.5-8.5z"/>
+        </svg>
+      </div>
+      <p>Voltage: <span id="voltage">N/A</span> V</p>
+      <p>State of Charge: <span id="soc">N/A</span> %</p>
+      <p>Temperature: <span id="temperature">N/A</span> °C</p>
+      <p>Current: <span id="current">N/A</span></p>
+    </div>
+    <div class="charts-panel">
+      <div class="chart-container">
+        <canvas id="voltageChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="socChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <script>
+    let historicalData = [];
+    const voltageChart = new Chart(document.getElementById('voltageChart').getContext('2d'), {
+      type: 'line',
+      data: { datasets: [{ label: 'Voltage (V)', data: [], borderColor: '#00b7eb', fill: false, borderWidth: 2, pointRadius: 0 }] },
+      options: {
+        maintainAspectRatio: false,
+        scales: {
+          x: { type: 'time', title: { display: true, text: 'Time', color: '#E0E0E0' }, ticks: { color: '#E0E0E0' } },
+          y: { title: { display: true, text: 'Voltage (V)', color: '#E0E0E0' }, ticks: { color: '#E0E0E0' }, grid: { color: '#444' } }
+        },
+        plugins: { legend: { labels: { color: '#E0E0E0' } } },
+        animation: false
+      }
+    });
+    const socChart = new Chart(document.getElementById('socChart').getContext('2d'), {
+      type: 'line',
+      data: { datasets: [{ label: 'SoC (%)', data: [], borderColor: '#00ff88', fill: false, borderWidth: 2, pointRadius: 0 }] },
+      options: {
+        maintainAspectRatio: false,
+        scales: {
+          x: { type: 'time', title: { display: true, text: 'Time', color: '#E0E0E0' }, ticks: { color: '#E0E0E0' } },
+          y: { title: { display: true, text: 'SoC (%)', color: '#E0E0E0' }, ticks: { color: '#E0E0E0' }, grid: { color: '#444' } }
+        },
+        plugins: { legend: { labels: { color: '#E0E0E0' } } },
+        animation: false
+      }
+    });
+
+    const ws = new WebSocket('ws://10.0.1.5:3000');
+    ws.onopen = () => console.log('WebSocket connected');
+    ws.onmessage = (event) => {
+      console.log('WebSocket received:', event.data);
+      try {
+        const data = JSON.parse(event.data);
+        console.log('Parsed WebSocket data:', data);
+        historicalData.push(data);
+        updateCharts([data]);
+      } catch (error) {
+        console.error('WebSocket parse error:', error);
+      }
+    };
+    ws.onerror = (error) => console.error('WebSocket error:', error);
+    ws.onclose = () => console.log('WebSocket closed');
+
+    async function fetchHistoricalData() {
+      try {
+        const response = await fetch('http://10.0.1.5:3000/historical-data');
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const data = await response.json();
+        console.log('Fetched historical data:', data);
+        historicalData = data;
+        updateCharts(historicalData);
+      } catch (error) {
+        console.error('Fetch historical data error:', error);
+      }
+    }
+
+    async function fetchLatestData() {
+      try {
+        const response = await fetch('http://10.0.1.5:3000/latest-data');
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const data = await response.json();
+        console.log('Fetched latest data:', data);
+        if (data.timestamp) {
+          const lastTimestamp = historicalData.length > 0 ? historicalData[historicalData.length - 1].timestamp : null;
+          if (!lastTimestamp || new Date(data.timestamp) > new Date(lastTimestamp)) {
+            historicalData.push(data);
+            updateCharts([data]);
+          }
+        }
+      } catch (error) {
+        console.error('Fetch latest data error:', error);
+      }
+    }
+
+    function updateCharts(data) {
+      console.log('Updating charts with data:', data);
+      data.forEach(point => {
+        console.log('Processing point:', point);
+        document.getElementById('voltage').textContent = point.voltage ? point.voltage.toFixed(2) : 'N/A';
+        document.getElementById('soc').textContent = point.soc ? point.soc.toFixed(2) : 'N/A';
+        document.getElementById('temperature').textContent = point.temperature ? point.temperature.toFixed(1) : 'N/A';
+        document.getElementById('current').textContent = 'N/A';  // Hardcoded current removed
+
+        const batteryFill = document.querySelector('.battery-fill');
+        const soc = Math.max(0, Math.min(100, point.soc || 0));
+        const fillWidth = (soc / 100) * 46;
+        batteryFill.setAttribute('width', fillWidth);
+        batteryFill.setAttribute('fill', soc < 20 ? '#ff0000' : '#00ff88');
+
+        const indicator = document.querySelector('.indicator');
+        if (point.is_charging) {
+          indicator.classList.add('charging');
+          indicator.setAttribute('fill', '#00ff88');
+        } else {
+          indicator.classList.remove('charging');
+          indicator.setAttribute('fill', '#888');
+        }
+
+        voltageChart.data.datasets[0].data.push({ x: point.timestamp, y: point.voltage });
+        socChart.data.datasets[0].data.push({ x: point.timestamp, y: point.soc });
+      });
+      voltageChart.update();
+      socChart.update();
+    }
+
+    fetchHistoricalData();
+    setInterval(fetchLatestData, 5000);
+  </script>
+</body>
+</html>
